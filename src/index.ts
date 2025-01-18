@@ -3,6 +3,14 @@ import { v4 as uuid } from 'uuid'
 
 const wss = new WebSocketServer({ port : 8080 })
 
+interface WebSocketMessage {
+    type : string;
+    connId? : string;
+    offer?:RTCSessionDescriptionInit;
+    candidates?: RTCIceCandidateInit;
+    error?:string
+}
+
 interface Connections {
     ids : string[];
     senders : Record<string, WebSocket>;
@@ -28,16 +36,43 @@ const addReciever = (id : string, socket : WebSocket) => {
     return true
 }
 
-wss.on("connection", (ws) => {
-    ws.on("message", (data : any) => {
+const removeConnection = (socket : WebSocket) => {
+    const senderConnId = Object.entries(connections.senders).find(([_, senderEntry]) => socket === senderEntry)?.[0]
+    const recieverConnId = Object.entries(connections.recievers).find(([_, recieverEntry]) => socket === recieverEntry)?.[0]
+
+    if(senderConnId) {
+        delete connections.senders[senderConnId]
+        delete connections.recievers[senderConnId]
+        connections.ids = connections.ids.filter(id => id !== senderConnId)
+        console.log(`Sender disconnected from ${senderConnId}`)
+    }
+
+    if(recieverConnId) {
+        delete connections.recievers[recieverConnId]
+        console.log(`Reciever disconnected from ${recieverConnId}`)
+    }
+}
+
+wss.on("connection", (ws : WebSocket) => {
+    console.log(`new connection : ${ws}`)
+    ws.on("close", () => {
+        removeConnection(ws)
+    })
+
+    ws.on("error", (err) => {
+        console.error("websocket error : ", err)
+        removeConnection(ws)
+    })
+
+    ws.on("message", (data : string) => {
         const message = JSON.parse(data)
         if(message.type === "sender") {
             const connId = uuid()
             addSender(connId, ws)
-            ws.send(JSON.stringify({ connId }))
+            ws.send(JSON.stringify({ type : "connection-id", connId }))
             // senderSocket = ws
             console.log(`sender created connId ${connId}`)
-        } else if(message.type === "reciever") { // message = { type : "reciever", connId : "something"}
+        } else if(message.type === "reciever") { 
             // recieverSocket = ws
             if(!message.connId) {
                 return ws.send(JSON.stringify({ error : "message must have a connId field." }))
@@ -67,12 +102,11 @@ wss.on("connection", (ws) => {
             }
             senderSocket?.send(JSON.stringify({ type : "create-answer", offer : message.offer }))
             console.log(`answer sent from ${ws} to ${senderSocket} on connection ${message.connId}`)
-        } else if(message.type === "ice-candidates") { // message = { type : "ice-candidates", candidates : , connId : "something" }
+        } else if(message.type === "ice-candidates") {
             if(ws === connections.senders[message.connId]) {
                 const recieverSocket = connections.recievers[message.connId]
                 if(!recieverSocket) {
                     return ws.send(JSON.stringify({ error : "reciever doesnt exist"}))
-                    
                 }
                 recieverSocket?.send(JSON.stringify({ type : 'ice-candidates', candidates : message.candidates }))
             } else if(ws === connections.recievers[message.connId]) {
@@ -82,6 +116,8 @@ wss.on("connection", (ws) => {
                 }
                 senderSocket?.send(JSON.stringify({ type : 'ice-candidates', candidates : message.candidates }))
             }
+        } else {
+            ws.send(JSON.stringify({ error : "invalid message type" }))
         }
     })
 })
