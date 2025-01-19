@@ -13,19 +13,17 @@ interface WebSocketMessage {
 
 interface Connections {
     ids : string[];
-    senders : Record<string, WebSocket>;
-    recievers : Record<string, WebSocket>;
+    users : Record<string, WebSocket>;
 }
 
 let connections : Connections = {
     ids : [],
-    senders : {},
-    recievers : {}
+    users : {}
 }
 
-const addSender = (id : string, socket : WebSocket) => {
+const addUser = (id : string, socket : WebSocket) => {
     connections.ids.push(id)
-    connections.senders[id] = socket
+    connections.users[id] = socket
 }
 
 const addReciever = (id : string, socket : WebSocket) => {
@@ -80,7 +78,7 @@ wss.on("connection", (ws : WebSocket) => {
                 return ws.send(JSON.stringify({ error : "invalid connection id" }))
             }
             console.log(`reciever added to connId ${message.connId}`)
-        } else if(message.type === "create-offer") { // message = { type : "create-offer", offer : sdp, connId : "somethins" }
+        } else if(message.type === "create-offer") {
             if(!message.connId) {
                 return ws.send(JSON.stringify({ error : "must include connection id to create offer" }))
             }
