@@ -70,10 +70,8 @@ wss.on("connection", (ws : WebSocket) => {
             const connId = uuid()
             addSender(connId, ws)
             ws.send(JSON.stringify({ type : "connection-id", connId }))
-            // senderSocket = ws
             console.log(`sender created connId ${connId}`)
         } else if(message.type === "reciever") { 
-            // recieverSocket = ws
             if(!message.connId) {
                 return ws.send(JSON.stringify({ error : "message must have a connId field." }))
             }
