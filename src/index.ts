@@ -6,9 +6,9 @@ const wss = new WebSocketServer({ port : 8080 })
 interface WebSocketMessage {
     type : string;
     connId? : string;
-    offer?:RTCSessionDescriptionInit;
+    offer?: RTCSessionDescriptionInit;
     candidates?: RTCIceCandidateInit;
-    error?:string
+    error?: string
 }
 
 interface Connections {
@@ -65,7 +65,7 @@ wss.on("connection", (ws : WebSocket) => {
     })
 
     ws.on("message", (data : string) => {
-        const message = JSON.parse(data)
+        const message : WebSocketMessage = JSON.parse(data)
         if(message.type === "sender") {
             const connId = uuid()
             addSender(connId, ws)
@@ -83,6 +83,9 @@ wss.on("connection", (ws : WebSocket) => {
             }
             console.log(`reciever added to connId ${message.connId}`)
         } else if(message.type === "create-offer") { // message = { type : "create-offer", offer : sdp, connId : "somethins" }
+            if(!message.connId) {
+                return ws.send(JSON.stringify({ error : "must include connection id to create offer" }))
+            }
             if(!connections.senders[message.connId]) {
                 return ws.send(JSON.stringify({ error : "must be a sender to create offer" }))
             }
@@ -93,6 +96,9 @@ wss.on("connection", (ws : WebSocket) => {
             recieverSocket?.send(JSON.stringify({ type : "create-offer", offer : message.offer }))
             console.log(`offer sent from ${ws} to ${recieverSocket} on connection ${message.connId}`)
         } else if(message.type === "create-answer") {
+            if(!message.connId) {
+                return ws.send(JSON.stringify({ error : "must include connection id to create answer" }))
+            }
             if(!connections.recievers[message.connId]) {
                 return ws.send(JSON.stringify({ error : "must be a reciever to create answer" }))
             }
@@ -103,6 +109,9 @@ wss.on("connection", (ws : WebSocket) => {
             senderSocket?.send(JSON.stringify({ type : "create-answer", offer : message.offer }))
             console.log(`answer sent from ${ws} to ${senderSocket} on connection ${message.connId}`)
         } else if(message.type === "ice-candidates") {
+            if(!message.connId) {
+                return ws.send(JSON.stringify({ error : "must include connection id to send ice candidates" }))
+            }
             if(ws === connections.senders[message.connId]) {
                 const recieverSocket = connections.recievers[message.connId]
                 if(!recieverSocket) {
