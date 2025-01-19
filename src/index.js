@@ -5,6 +5,8 @@ const wss = new WebSocketServer({ port : 8080 })
 
 const userIdToWebSocket = new Map()
 const webSocketToUserId = new Map()
+const rooms = new Map() //hostId to member Id
+const memberIdToRooms = new Map()
 
 const addUser = (socket) => {
     const userId = uuid()
@@ -15,13 +17,19 @@ const addUser = (socket) => {
 
 const removeUser = (socket) => {
     const userId = webSocketToUserId.get(socket)
+    if(rooms.has(userId)) {
+        const members = rooms.get(userId)
+        members.map(memberId => {
+            const memberSock = userIdToWebSocket(memberId)
+            memberSock.send(JSON.stringify({ error : "room disconnected" }))
+        })
+        rooms.delete(userId)
+    }
     if(userId) {
         userIdToWebSocket.delete(userId)
         webSocketToUserId.delete(socket)
     }
 }
-
-const rooms = new Map() //hostId to member Id
 
 const createRoom = (hostSocket) => {
     const hostId = webSocketToUserId.get(hostSocket)
@@ -35,7 +43,34 @@ const joinRoom = (memberSocket, hostId) => {
         return memberSocket.send(JSON.stringify({ error : "invalid id" }))
     }
     rooms.get(hostId).push(memberId)
+    memberIdToRooms.set(memberId, hostId)
     console.log(`member ${memberId} joined room ${hostId}`)
+}
+
+const sendAnswer = (hostSocket, message) => { // message = {type="create-answer", answer} 
+    if(!message.answer ) {
+        return hostSocket.send("must include answer and memberId")
+    }
+    const hostId = webSocketToUserId.get(hostSocket)
+    const memberId = rooms.get(hostId)[0]
+    const memberSocket = userIdToWebSocket.get(memberId)
+    memberSocket.send(JSON.stringify({ type : "create-answer", answer : message.answer }))
+    console.log(`answer ${message.answer} sent from ${hostId} to ${memberId}`)
+}
+
+const exchangeCandidate = (socket, message) => {
+    if(!message.id) {
+        return socket.send(JSON.stringify({ error : "must send id" }))
+    }
+    const endUserSocket = userIdToWebSocket.get(message.id)
+    if(!endUserSocket) {
+        return socket.send(JSON.stringify({ error : "invalid id" }))
+    }
+    if(!message.candidate) {
+        return socket.send(JSON.stringify({ error : "must include candidates" }))
+    }
+    const senderId = webSocketToUserId.get(socket)
+    endUserSocket.send(JSON.stringify({ type : "ice-candidate", candidate : message.candidate, senderId }))
 }
 
 wss.on("connection", (ws) => {
@@ -47,7 +82,7 @@ wss.on("connection", (ws) => {
 
     ws.on("error", (err) => {
         console.error("websocket error : ", err)
-        removeConnection(ws)
+        removeUser(ws)
     })
 
     ws.on("message", (data ) => {
@@ -65,37 +100,13 @@ wss.on("connection", (ws) => {
             if(!message.offer) {
                 return ws.send(JSON.stringify({ error : "must send offer" }))
             }
-            hostSocket.send(JSON.stringify({ type: "new-member", username : memberId, offer : message.offer }))
-        }else if(message.type === "create-answer") {
-            if(!message.connId) {
-                return ws.send(JSON.stringify({ error : "must include connection id to create answer" }))
-            }
-            if(!connections.recievers[message.connId]) {
-                return ws.send(JSON.stringify({ error : "must be a reciever to create answer" }))
-            }
-            const senderSocket = connections.senders[message.connId]
-            if(!senderSocket) {
-                return ws.send(JSON.stringify({ type : "invalid connection id" }))
-            }
-            senderSocket?.send(JSON.stringify({ type : "create-answer", offer : message.offer }))
-            console.log(`answer sent from ${ws} to ${senderSocket} on connection ${message.connId}`)
+            hostSocket.send(JSON.stringify({ type: "new-member", memberId, offer : message.offer }))
+            console.log(`offer ${message.offer} sent from ${memberId} to ${hostId}`)
+        }
+        else if(message.type === "create-answer") {
+            sendAnswer(ws, message)
         } else if(message.type === "ice-candidates") {
-            if(!message.connId) {
-                return ws.send(JSON.stringify({ error : "must include connection id to send ice candidates" }))
-            }
-            if(ws === connections.senders[message.connId]) {
-                const recieverSocket = connections.recievers[message.connId]
-                if(!recieverSocket) {
-                    return ws.send(JSON.stringify({ error : "reciever doesnt exist"}))
-                }
-                recieverSocket?.send(JSON.stringify({ type : 'ice-candidates', candidates : message.candidates }))
-            } else if(ws === connections.recievers[message.connId]) {
-                const senderSocket = connections.senders[message.connId]
-                if(!senderSocket) {
-                    return ws.send(JSON.stringify({ error : "sender doesnt exist" }))
-                }
-                senderSocket?.send(JSON.stringify({ type : 'ice-candidates', candidates : message.candidates }))
-            }
+            exchangeCandidate(ws, message)
         } else {
             ws.send(JSON.stringify({ error : "invalid message type" }))
         }
