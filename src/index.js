@@ -12,6 +12,7 @@ const addUser = (socket) => {
     const userId = uuid()
     userIdToWebSocket.set(userId, socket)
     webSocketToUserId.set(socket, userId)
+    socket.send(JSON.stringify({ type : "user-id", userId }))
     console.log(`new user : ${userId}`)
 }
 
@@ -23,11 +24,13 @@ const removeUser = (socket) => {
             const memberSock = userIdToWebSocket(memberId)
             memberSock.send(JSON.stringify({ error : "room disconnected" }))
         })
-        rooms.delete(userId)
+        rooms.delete(userId) //update remove member from array
+        console.log(`host ${userId} disconnected`) 
     }
     if(userId) {
         userIdToWebSocket.delete(userId)
         webSocketToUserId.delete(socket)
+        console.log(`member ${memberId} disconnected`)
     }
 }
 
@@ -49,13 +52,12 @@ const joinRoom = (memberSocket, hostId) => {
 
 const sendAnswer = (hostSocket, message) => { // message = {type="create-answer", answer} 
     if(!message.answer ) {
-        return hostSocket.send("must include answer and memberId")
+        return hostSocket.send(JSON.stringify({error : "must include answer and memberId"}))
     }
     const hostId = webSocketToUserId.get(hostSocket)
-    const memberId = rooms.get(hostId)[0]
-    const memberSocket = userIdToWebSocket.get(memberId)
+    const memberSocket = userIdToWebSocket.get(message.memberId)
     memberSocket.send(JSON.stringify({ type : "create-answer", answer : message.answer }))
-    console.log(`answer ${message.answer} sent from ${hostId} to ${memberId}`)
+    console.log(`answer ${message.answer} sent from ${hostId} to ${message.memberId}`)
 }
 
 const exchangeCandidate = (socket, message) => {
@@ -94,6 +96,9 @@ wss.on("connection", (ws) => {
         } 
         else if(message.type === "join-room") { 
             const hostId = message.hostId 
+            if(!hostId) {
+                return ws.send(JSON.stringify({ error : "message should include hostId" }))
+            }
             joinRoom(ws, hostId)
             const hostSocket = userIdToWebSocket.get(hostId)
             const memberId = webSocketToUserId.get(ws)
@@ -105,7 +110,7 @@ wss.on("connection", (ws) => {
         }
         else if(message.type === "create-answer") {
             sendAnswer(ws, message)
-        } else if(message.type === "ice-candidates") {
+        } else if(message.type === "ice-candidate") {
             exchangeCandidate(ws, message)
         } else {
             ws.send(JSON.stringify({ error : "invalid message type" }))
