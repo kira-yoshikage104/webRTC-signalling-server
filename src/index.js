@@ -87,7 +87,7 @@ wss.on("connection", (ws) => {
         removeUser(ws)
     })
 
-    ws.on("message", (data ) => {
+    ws.on("message", (data) => {
         const message  = JSON.parse(data)
         if(message.type === "create-room") {
             const hostId = createRoom(ws)
@@ -101,6 +101,9 @@ wss.on("connection", (ws) => {
             }
             joinRoom(ws, hostId)
             const hostSocket = userIdToWebSocket.get(hostId)
+            if(!hostSocket) {
+                return ws.send(JSON.stringify({ error : "invalid room" }));
+            }
             const memberId = webSocketToUserId.get(ws)
             if(!message.offer) {
                 return ws.send(JSON.stringify({ error : "must send offer" }))
