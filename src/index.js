@@ -21,7 +21,7 @@ const removeUser = (socket) => {
     if(rooms.has(userId)) {
         const members = rooms.get(userId)
         members.map(memberId => {
-            const memberSock = userIdToWebSocket(memberId)
+            const memberSock = userIdToWebSocket.get(memberId)
             memberSock.send(JSON.stringify({ error : "room disconnected" }))
         })
         rooms.delete(userId) //update remove member from array
@@ -51,7 +51,7 @@ const joinRoom = (memberSocket, hostId) => {
 }
 
 const sendAnswer = (hostSocket, message) => { // message = {type="create-answer", answer} 
-    if(!message.answer ) {
+    if(!message.answer) {
         return hostSocket.send(JSON.stringify({error : "must include answer and memberId"}))
     }
     const hostId = webSocketToUserId.get(hostSocket)
