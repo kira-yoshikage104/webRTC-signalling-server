@@ -30,7 +30,7 @@ const removeUser = (socket) => {
     if(userId) {
         userIdToWebSocket.delete(userId)
         webSocketToUserId.delete(socket)
-        console.log(`member ${memberId} disconnected`)
+        console.log(`member ${userId} disconnected`)
     }
 }
 

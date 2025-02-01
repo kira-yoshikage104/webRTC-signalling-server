@@ -11,6 +11,7 @@ const addUser = (id, socket) => {
     connections.ids.push(id);
     connections.users[id] = socket;
 };
+
 const addReciever = (id, socket) => {
     if (!connections.senders[id]) {
         return false;
