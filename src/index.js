@@ -22,15 +22,22 @@ const removeUser = (socket) => {
         const members = rooms.get(userId)
         members.map(memberId => {
             const memberSock = userIdToWebSocket.get(memberId)
-            memberSock.send(JSON.stringify({ error : "room disconnected" }))
+            memberSock?.send(JSON.stringify({ type : 'disconnected' }))
         })
+        userIdToWebSocket.delete(userId)
+        webSocketToUserId.delete(socket)
         rooms.delete(userId) //update remove member from array
         console.log(`host ${userId} disconnected`) 
-    }
-    if(userId) {
+    } else if(userId) {
         userIdToWebSocket.delete(userId)
         webSocketToUserId.delete(socket)
         console.log(`member ${userId} disconnected`)
+
+        const host = memberIdToRooms.get(userId)
+        rooms.get(host)?.filter(memberId => memberId !== userId)
+        const hostSocket = userIdToWebSocket.get(host)
+
+        hostSocket?.send(JSON.stringify({ type : 'disconnected', memberId : userId }))
     }
 }
 
@@ -45,7 +52,11 @@ const joinRoom = (memberSocket, hostId) => {
     if(!rooms.has(hostId)) {
         return memberSocket.send(JSON.stringify({ error : "invalid id" }))
     }
-    rooms.get(hostId).push(memberId)
+    if(!rooms.get(hostId)) {
+        rooms.set(hostId, [memberId])
+    } else {   
+        rooms.get(hostId).push(memberId)
+    }
     memberIdToRooms.set(memberId, hostId)
     console.log(`member ${memberId} joined room ${hostId}`)
 }
