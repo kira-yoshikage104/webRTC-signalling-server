@@ -72,12 +72,12 @@ const sendAnswer = (hostSocket, message) => { // message = {type="create-answer"
 }
 
 const exchangeCandidate = (socket, message) => {
-    if(!message.id) {
-        return socket.send(JSON.stringify({ error : "must send id" }))
+    if(!message.targetId) {
+        return socket.send(JSON.stringify({ error : "must include target id" }))
     }
-    const endUserSocket = userIdToWebSocket.get(message.id)
+    const endUserSocket = userIdToWebSocket.get(message.targetId)
     if(!endUserSocket) {
-        return socket.send(JSON.stringify({ error : "invalid id" }))
+        return socket.send(JSON.stringify({ error : "invalid target id" }))
     }
     if(!message.candidate) {
         return socket.send(JSON.stringify({ error : "must include candidates" }))
