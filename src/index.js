@@ -12,7 +12,7 @@ const addUser = (socket) => {
     const userId = uuid()
     userIdToWebSocket.set(userId, socket)
     webSocketToUserId.set(socket, userId)
-    socket.send(JSON.stringify({ type : "user-id", userId }))
+    socket.send(JSON.stringify({ type : "userId", userId }))
     console.log(`new user : ${userId}`)
 }
 
