@@ -49,8 +49,8 @@ const removeUser = (socket) => {
 
 const createRoom = (hostSocket, roomName, genre, isPublic) => {
   const hostId = webSocketToUserId.get(hostSocket);
-  rooms.set(hostId, { roomName, genre, isPublic, members: [] });
-  console.log(rooms);
+  rooms.set(hostId, { roomName, genre, isPublic, members: [hostId] });
+  memberIdToRooms.set(hostId, hostId);
   return hostId;
 };
 
@@ -102,6 +102,27 @@ const exchangeCandidate = (socket, message) => {
   );
 };
 
+const sendChatMessage = (ws, text) => {
+  const senderId = webSocketToUserId.get(ws);
+  const roomId = memberIdToRooms.get(senderId) || senderId;
+  const room = rooms.get(roomId);
+  if(!room) {
+    console.error(`Room not found for sender ${senderId}`);
+    ws.send(JSON.stringify(`Room not found for sender ${senderId}`));
+    return;
+  }
+  room.members.map(recieverId => {
+    const recieverSock = userIdToWebSocket.get(recieverId);
+    console.log(`sending message ${text} from ${senderId} to ${recieverId}`)
+    recieverSock?.send(JSON.stringify({
+      type : "chat-message",
+      senderId,
+      text,
+      timestamp : Date.now()
+    }))
+  })
+}
+
 wss.on("connection", (ws) => {
   addUser(ws);
 
@@ -152,6 +173,8 @@ wss.on("connection", (ws) => {
     } else if (message.type === "public-rooms") {
       const obj = Object.fromEntries(rooms);
       ws.send(JSON.stringify({ type: "public-rooms", rooms: obj }));
+    } else if (message.type === "chat-message") { 
+      sendChatMessage(ws, message.text)
     } else {
       ws.send(JSON.stringify({ error: "invalid message type" }));
     }
