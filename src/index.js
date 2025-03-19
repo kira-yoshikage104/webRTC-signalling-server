@@ -21,8 +21,10 @@ const removeUser = (socket) => {
   if (rooms.has(userId)) {
     const members = rooms.get(userId).members;
     members.map((memberId) => {
-      const memberSock = userIdToWebSocket.get(memberId);
-      memberSock?.send(JSON.stringify({ type: "disconnected" }));
+      if(memberId !== userId) {
+        const memberSock = userIdToWebSocket.get(memberId);
+        memberSock?.send(JSON.stringify({ type: "room-closed" }));
+      }
     });
     userIdToWebSocket.delete(userId);
     webSocketToUserId.delete(socket);
@@ -38,12 +40,17 @@ const removeUser = (socket) => {
     if (room) {
       room.members = room.members.filter((memberId) => memberId !== userId);
       rooms.set(host, room);
+      room.members.forEach(memberId => {
+        const memberSocket = userIdToWebSocket.get(memberId);
+        memberSocket.send(JSON.stringify({ type : "disconnected", memberId : userId }));
+      })
     }
-    const hostSocket = userIdToWebSocket.get(host);
 
-    hostSocket?.send(
-      JSON.stringify({ type: "disconnected", memberId: userId })
-    );
+    // const hostSocket = userIdToWebSocket.get(host);
+
+    // hostSocket?.send(
+    //   JSON.stringify({ type: "disconnected", memberId: userId })
+    // );
   }
 };
 
@@ -54,46 +61,102 @@ const createRoom = (hostSocket, roomName, genre, isPublic) => {
   return hostId;
 };
 
-const joinRoom = (memberSocket, hostId) => {
+const joinRoom = (memberSocket, message) => {
+  const { targetId, offer } = message;
   const memberId = webSocketToUserId.get(memberSocket);
-  if (!rooms.has(hostId)) {
-    return memberSocket.send(JSON.stringify({ error: "invalid id" }));
+  if(!memberId) {
+    return memberSocket.send(JSON.stringify({ error : "invalid user" }));
   }
-  rooms.get(hostId).members.push(memberId);
-  memberIdToRooms.set(memberId, hostId);
-  console.log(`member ${memberId} joined room ${hostId}`);
+  if (!targetId) {
+    return memberSocket.send(JSON.stringify({ error: "message should include targetId" }));
+  }
+  if (!rooms.has(targetId)) {
+    return memberSocket.send(JSON.stringify({ error: "invalid targetId" }));
+  }
+  if (!offer) {
+    return ws.send(JSON.stringify({ error: "must send offer" }));
+  }
+  const roomMembers = rooms.get(targetId).members;
+  memberSocket.send(JSON.stringify({ type : "room-members", members : roomMembers }));
+  roomMembers.forEach(existingMemberId => {
+    const existingMemberSock = userIdToWebSocket.get(existingMemberId);
+    existingMemberSock.send(JSON.stringify({ type: "new-member", memberId, offer }));
+    console.log(`offer ${offer} sent from ${memberId} to ${existingMemberId}`);
+  });
+  rooms.get(targetId).members.push(memberId);
+  memberIdToRooms.set(memberId, targetId);
+  console.log(`member ${memberId} joined room ${targetId}`);
 };
 
-const sendAnswer = (hostSocket, message) => {
+const sendAnswer = (senderSocket, message) => {
   // message = {type="create-answer", answer}
-  if (!message.answer) {
-    return hostSocket.send(
-      JSON.stringify({ error: "must include answer and memberId" })
+  if (!message.answer || !message.targetId) {
+    return senderSocket.send(
+      JSON.stringify({ error: "must include answer and targetId" })
     );
   }
-  const hostId = webSocketToUserId.get(hostSocket);
-  const memberSocket = userIdToWebSocket.get(message.memberId);
-  memberSocket.send(
-    JSON.stringify({ type: "create-answer", answer: message.answer })
+  const senderId = webSocketToUserId.get(senderSocket);
+  const targetSocket = userIdToWebSocket.get(message.targetId);
+  targetSocket.send(
+    JSON.stringify({ type: "create-answer", answer: message.answer, senderId })
   );
   console.log(
-    `answer ${message.answer} sent from ${hostId} to ${message.memberId}`
+    `answer ${message.answer} sent from ${senderId} to ${message.targetId}`
   );
 };
+
+const handlePeerConnectionRequest = (senderSocket, message) => {
+  const senderId = webSocketToUserId.get(senderSocket);
+  const { targetId } = message;
+  if(!targetId) {
+    return senderSocket.send(JSON.stringify({ error : "must include targetId" }));
+  }
+  const targetSocket = userIdToWebSocket.get(targetId);
+  if(!targetSocket) {
+    return senderSocket.send(JSON.stringify({ error : "invalid targetId" }));
+  }
+  targetSocket.send(JSON.stringify({ type : "peer-connection-request", senderId }));
+}
+
+const handlePeerConnectionOffer = (senderSocket, message) => {
+  const senderId = webSocketToUserId.get(senderSocket);
+  const { targetId, offer } = message;
+  if(!targetId || !offer) {
+    return senderSocket.send(JSON.stringify({ error : "must include targetId and offer" }));
+  }
+  const targetSocket = userIdToWebSocket.get(targetId);
+  if(!targetSocket) {
+    return senderSocket.send(JSON.stringify({ error : "invalid targetId"}));
+  }
+  targetSocket.send(JSON.stringify({ type : "peer-connection-offer", senderId, offer }));
+}
+
+const handlePeerConnectionAnswer = (senderSocket, message) => {
+  const senderId = webSocketToUserId.get(senderSocket);
+  const { targetId, answer } = message;
+  if(!targetId || !answer) {
+    return senderSocket.send(JSON.stringify({ error : "must include targetId and answer" }));
+  }
+  const targetSocket = userIdToWebSocket.get(targetId);
+  if(!targetSocket) {
+    return senderSocket.send(JSON.stringify({ error : "invalid targetId"}));
+  }
+  targetSocket.send(JSON.stringify({ type : "peer-connection-answer", senderId, answer }));
+}
 
 const exchangeCandidate = (socket, message) => {
   if (!message.targetId) {
-    return socket.send(JSON.stringify({ error: "must include target id" }));
+    return socket.send(JSON.stringify({ error: "must include targetId" }));
   }
-  const endUserSocket = userIdToWebSocket.get(message.targetId);
-  if (!endUserSocket) {
+  const targetSocket = userIdToWebSocket.get(message.targetId);
+  if (!targetSocket) {
     return socket.send(JSON.stringify({ error: "invalid target id" }));
   }
   if (!message.candidate) {
     return socket.send(JSON.stringify({ error: "must include candidates" }));
   }
   const senderId = webSocketToUserId.get(socket);
-  endUserSocket.send(
+  targetSocket.send(
     JSON.stringify({
       type: "ice-candidate",
       candidate: message.candidate,
@@ -147,27 +210,15 @@ wss.on("connection", (ws) => {
       ws.send(JSON.stringify({ type: "host-id", hostId }));
       console.log(`user created room ${hostId}`);
     } else if (message.type === "join-room") {
-      const hostId = message.hostId;
-      if (!hostId) {
-        return ws.send(
-          JSON.stringify({ error: "message should include hostId" })
-        );
-      }
-      joinRoom(ws, hostId);
-      const hostSocket = userIdToWebSocket.get(hostId);
-      if (!hostSocket) {
-        return ws.send(JSON.stringify({ error: "invalid room" }));
-      }
-      const memberId = webSocketToUserId.get(ws);
-      if (!message.offer) {
-        return ws.send(JSON.stringify({ error: "must send offer" }));
-      }
-      hostSocket.send(
-        JSON.stringify({ type: "new-member", memberId, offer: message.offer })
-      );
-      console.log(`offer ${message.offer} sent from ${memberId} to ${hostId}`);
+      joinRoom(ws, message);
     } else if (message.type === "create-answer") {
       sendAnswer(ws, message);
+    } else if(message.type === "request-peer-connection") {
+      handlePeerConnectionRequest(ws, message);
+    } else if(message.type === "peer-connection-offer") {
+      handlePeerConnectionOffer(ws, message);
+    } else if(message.type === "peer-connection-answer") {
+      handlePeerConnectionAnswer(ws, message);
     } else if (message.type === "ice-candidate") {
       exchangeCandidate(ws, message);
     } else if (message.type === "public-rooms") {
