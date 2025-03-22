@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { v4 as uuid } from "uuid";
 
-const wss = new WebSocketServer({ port: 8080 });
+const wss = new WebSocketServer({ port: 80 });
 
 const userIdToWebSocket = new Map();
 const webSocketToUserId = new Map();
