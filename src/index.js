@@ -7,6 +7,7 @@ const userIdToWebSocket = new Map();
 const webSocketToUserId = new Map();
 const rooms = new Map(); //hostId -> {roomName, genre, isPublic, members: []}
 const memberIdToRooms = new Map();
+const userIdToUsername = new Map();
 
 const addUser = (socket) => {
   const userId = uuid();
@@ -18,6 +19,7 @@ const addUser = (socket) => {
 
 const removeUser = (socket) => {
   const userId = webSocketToUserId.get(socket);
+  userIdToUsername.delete(userId);
   if (rooms.has(userId)) {
     const members = rooms.get(userId).members;
     members.map((memberId) => {
@@ -45,24 +47,19 @@ const removeUser = (socket) => {
         memberSocket.send(JSON.stringify({ type : "disconnected", memberId : userId }));
       })
     }
-
-    // const hostSocket = userIdToWebSocket.get(host);
-
-    // hostSocket?.send(
-    //   JSON.stringify({ type: "disconnected", memberId: userId })
-    // );
   }
 };
 
-const createRoom = (hostSocket, roomName, genre, isPublic) => {
+const createRoom = (hostSocket, roomName, genre, isPublic, username) => {
   const hostId = webSocketToUserId.get(hostSocket);
   rooms.set(hostId, { roomName, genre, isPublic, members: [hostId] });
   memberIdToRooms.set(hostId, hostId);
+  userIdToUsername.set(hostId, username);
   return hostId;
 };
 
 const joinRoom = (memberSocket, message) => {
-  const { targetId, offer } = message;
+  const { targetId, offer, username } = message;
   const memberId = webSocketToUserId.get(memberSocket);
   if(!memberId) {
     return memberSocket.send(JSON.stringify({ error : "invalid user" }));
@@ -76,12 +73,17 @@ const joinRoom = (memberSocket, message) => {
   if (!offer) {
     return ws.send(JSON.stringify({ error: "must send offer" }));
   }
-  const roomMembers = rooms.get(targetId).members;
+  if(!username) {
+    userIdToUsername.set(memberId, memberId);
+  } else {
+    userIdToUsername.set(memberId, username);
+  }
+  const roomMembers = rooms.get(targetId).members.map(currMemberId => ({ memberId : currMemberId, username : userIdToUsername.get(currMemberId) }));
   memberSocket.send(JSON.stringify({ type : "room-members", members : roomMembers }));
-  roomMembers.forEach(existingMemberId => {
+  rooms.get(targetId).members.forEach(existingMemberId => {
     const existingMemberSock = userIdToWebSocket.get(existingMemberId);
-    existingMemberSock.send(JSON.stringify({ type: "new-member", memberId, offer }));
-    console.log(`offer ${offer} sent from ${memberId} to ${existingMemberId}`);
+    existingMemberSock.send(JSON.stringify({ type: "new-member", memberId, offer, username : userIdToUsername.get(memberId) }));
+    console.log(`offer ${offer} sent from ${memberId} to ${existingMemberId}`); 
   });
   rooms.get(targetId).members.push(memberId);
   memberIdToRooms.set(memberId, targetId);
@@ -205,7 +207,8 @@ wss.on("connection", (ws) => {
         ws,
         message.roomName,
         message.genre,
-        message.isPublic
+        message.isPublic,
+        message.username
       );
       ws.send(JSON.stringify({ type: "host-id", hostId }));
       console.log(`user created room ${hostId}`);
