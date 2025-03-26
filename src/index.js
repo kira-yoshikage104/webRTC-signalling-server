@@ -1,7 +1,11 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { v4 as uuid } from "uuid";
+import http from "http";
 
-const wss = new WebSocketServer({ port: 80 });
+const server = http.createServer();
+const PORT = 8080;
+
+const wss = new WebSocketServer({ server });
 
 const userIdToWebSocket = new Map();
 const webSocketToUserId = new Map();
@@ -234,3 +238,7 @@ wss.on("connection", (ws) => {
     }
   });
 });
+
+server.listen(PORT, () => {
+  console.log(`server listening on port ${PORT}`);
+})

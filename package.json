@@ -16,6 +16,8 @@
     "uuid": "^11.0.5",
     "ws": "^8.18.0"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "supabase": "^2.19.7"
+  },
   "description": ""
 }
